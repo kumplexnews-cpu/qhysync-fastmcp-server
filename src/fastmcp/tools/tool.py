@@ -18,7 +18,12 @@ import mcp.types
 import pydantic_core
 from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
-from pydantic import Field, PydanticSchemaGenerationError
+from pydantic import (
+    BaseModel,
+    Field,
+    PydanticSchemaGenerationError,
+    field_validator,
+)
 from typing_extensions import TypeVar
 
 import fastmcp
@@ -63,42 +68,45 @@ def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str).decode()
 
 
-class ToolResult:
-    def __init__(
-        self,
-        content: list[ContentBlock] | Any | None = None,
-        structured_content: dict[str, Any] | Any | None = None,
-    ):
-        if content is None and structured_content is None:
-            raise ValueError("Either content or structured_content must be provided")
-        elif content is None:
-            content = structured_content
+class ToolResult(BaseModel):
+    content: list[ContentBlock] = Field(default_factory=list)
+    structured_content: dict[str, Any] | None = Field(default=None)
 
-        self.content: list[ContentBlock] = _convert_to_content(result=content)
+    @field_validator("structured_content", mode="before")
+    @classmethod
+    def _validate_structured_content(cls, v: Any) -> dict[str, Any] | None:
+        if v is None:
+            return None
 
-        if structured_content is not None:
-            try:
-                structured_content = pydantic_core.to_jsonable_python(
-                    value=structured_content
-                )
-            except pydantic_core.PydanticSerializationError as e:
-                logger.error(
-                    f"Could not serialize structured content. If this is unexpected, set your tool's output_schema to None to disable automatic serialization: {e}"
-                )
-                raise
-            if not isinstance(structured_content, dict):
-                raise ValueError(
-                    "structured_content must be a dict or None. "
-                    f"Got {type(structured_content).__name__}: {structured_content!r}. "
-                    "Tools should wrap non-dict values based on their output_schema."
-                )
-        self.structured_content: dict[str, Any] | None = structured_content
+        jsonable_python: Any = pydantic_core.to_jsonable_python(value=v)
+
+        if not isinstance(jsonable_python, dict):
+            raise ValueError("structured_content must be a dict or None")
+
+        return jsonable_python
+
+    # @field_validator("content", mode="before")
+    # @classmethod
+    # def _validate_content(cls, v: Any) -> list[ContentBlock] | None:
+    #     if v is None:
+    #         return None
+
+    #     return _convert_to_content(result=v)
+
+    # @model_validator(mode="after")
+    # def _validate_tool_result(self) -> Self:
+    #     if not self.content:
+    #         # Populate content from structured_content if it's not present
+    #         self.content = _convert_to_content(result=self.structured_content)
+
+    #     return self
 
     def to_mcp_result(
         self,
     ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
         if self.structured_content is None:
             return self.content
+
         return self.content, self.structured_content
 
 

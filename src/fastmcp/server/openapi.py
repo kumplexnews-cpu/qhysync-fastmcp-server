@@ -13,7 +13,7 @@ from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from mcp.types import ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 from pydantic.networks import AnyUrl
 
 import fastmcp
@@ -499,7 +499,9 @@ class OpenAPITool(Tool):
 
                 return ToolResult(structured_content=structured_output)
             except json.JSONDecodeError:
-                return ToolResult(content=response.text)
+                return ToolResult(
+                    content=[TextContent(type="text", text=response.text)]
+                )
 
         except httpx.HTTPStatusError as e:
             # Handle HTTP errors (4xx, 5xx)
